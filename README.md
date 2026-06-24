@@ -33,3 +33,15 @@ EcoSort AI bridges the gap between citizens and municipal guidelines. Users can 
    ```bash
    git clone https://github.com/1032241501-art/ecosort-ai-assistant.git
    cd ecosort-ai-assistant
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+3. **Run the Streamlit application:**
+   ```bash
+   streamlit run app.py
+3. **Usage:**
+   ```bash
+   Enter your IBM Cloud API Key and WatsonX Project ID in the sidebar.
+   Upload the provided VVCMC_Comprehensive_Waste_Policy_2024.pdf.
+   Click "Initialize RAG System" and start asking questions!
+
