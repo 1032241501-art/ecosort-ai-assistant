@@ -1,8 +1,9 @@
 streamlit
 ibm-watsonx-ai
-langchain
+langchain==0.2.16
 langchain-ibm
-langchain-community
+langchain-community==0.2.16
+langchain-core==0.2.38
 PyPDF2
 faiss-cpu
 sentence-transformers
