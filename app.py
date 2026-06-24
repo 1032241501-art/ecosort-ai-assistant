@@ -10,7 +10,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.chains import RetrievalQA
+from langchain.chains.retrieval import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_ibm import WatsonxLLM
 import tempfile
 import os
@@ -97,7 +99,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Model selection (CHANGED TO SUPPORTED TIER MODEL)
+    # Model selection
     model_choice = st.selectbox(
         "🤖 Select Model",
         ["ibm/granite-4-h-small"],
@@ -117,23 +119,20 @@ def initialize_watsonx_llm(api_key, project_id, model_id):
     Initialize IBM WatsonX LLM with specified credentials and model.
     """
     try:
-        # Configure WatsonX credentials
         credentials = {
             "url": "https://us-south.ml.cloud.ibm.com",
             "apikey": api_key
         }
         
-        # Set model parameters for optimal RAG performance
         parameters = {
             GenParams.DECODING_METHOD: "greedy",
             GenParams.MAX_NEW_TOKENS: 500,
             GenParams.MIN_NEW_TOKENS: 1,
-            GenParams.TEMPERATURE: 0.1,  
+            GenParams.TEMPERATURE: 0.1,
             GenParams.TOP_K: 50,
             GenParams.TOP_P: 1
         }
         
-        # Initialize WatsonX LLM through LangChain integration
         watsonx_llm = WatsonxLLM(
             model_id=model_id,
             url=credentials["url"],
@@ -154,16 +153,13 @@ def process_pdf_and_create_vectorstore(uploaded_file):
     Process uploaded PDF, chunk it, and create FAISS vector store.
     """
     try:
-        # Save uploaded file to temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             tmp_file_path = tmp_file.name
         
-        # Load PDF using LangChain's PyPDFLoader
         loader = PyPDFLoader(tmp_file_path)
         documents = loader.load()
         
-        # Split documents into chunks for better retrieval
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
@@ -171,16 +167,13 @@ def process_pdf_and_create_vectorstore(uploaded_file):
         )
         chunks = text_splitter.split_documents(documents)
         
-        # Initialize embeddings model (using HuggingFace sentence-transformers)
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
         )
         
-        # Create FAISS vector store from document chunks
         vector_store = FAISS.from_documents(chunks, embeddings)
         
-        # Clean up temporary file
         os.unlink(tmp_file_path)
         
         return vector_store
@@ -188,6 +181,30 @@ def process_pdf_and_create_vectorstore(uploaded_file):
     except Exception as e:
         st.error(f"Error processing PDF: {str(e)}")
         return None
+
+# Function to build RAG chain using new LangChain API
+def build_rag_chain(watsonx_llm, vector_store):
+    """
+    Build RAG chain using create_retrieval_chain (replaces deprecated RetrievalQA).
+    """
+    prompt = ChatPromptTemplate.from_template("""
+You are a municipal waste management assistant. Answer the following question based ONLY on the provided context from the policy document.
+If the answer is not in the context, say "I don't have information about this in the policy document."
+Provide a clear, actionable answer that promotes sustainable recycling practices.
+
+Context:
+{context}
+
+Question: {input}
+""")
+
+    combine_docs_chain = create_stuff_documents_chain(watsonx_llm, prompt)
+    retrieval_chain = create_retrieval_chain(
+        vector_store.as_retriever(search_kwargs={"k": 3}),
+        combine_docs_chain
+    )
+    
+    return retrieval_chain
 
 # Process PDF and initialize RAG system
 if process_button:
@@ -197,26 +214,15 @@ if process_button:
         st.error("⚠️ Please upload a Municipal Waste Policy PDF")
     else:
         with st.spinner("🔄 Initializing RAG system... (This takes a few seconds)"):
-            # Process PDF and create vector store
             vector_store = process_pdf_and_create_vectorstore(uploaded_file)
             
             if vector_store:
                 st.session_state.vector_store = vector_store
                 
-                # Initialize WatsonX LLM
                 watsonx_llm = initialize_watsonx_llm(api_key, project_id, model_choice)
                 
                 if watsonx_llm:
-                    # Create RetrievalQA chain
-                    st.session_state.qa_chain = RetrievalQA.from_chain_type(
-                        llm=watsonx_llm,
-                        chain_type="stuff",
-                        retriever=vector_store.as_retriever(
-                            search_kwargs={"k": 3}  # Retrieve top 3 relevant chunks
-                        ),
-                        return_source_documents=True
-                    )
-                    
+                    st.session_state.qa_chain = build_rag_chain(watsonx_llm, vector_store)
                     st.success("✅ RAG system initialized successfully! You can now start asking questions.")
                     st.balloons()
 
@@ -231,32 +237,19 @@ if st.session_state.qa_chain:
     
     # Chat input
     if prompt := st.chat_input("e.g., I am doing home renovations and have broken bricks. Can I throw them in the regular trash?"):
-        # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate response
         with st.chat_message("assistant"):
             with st.spinner("🤔 Thinking... Reading the Municipal PDF..."):
                 try:
-                    # Create context-aware prompt
-                    enhanced_prompt = f"""You are a municipal waste management assistant. Answer the following question based ONLY on the provided policy document. If the answer is not in the document, say "I don't have information about this in the policy document."
-
-Question: {prompt}
-
-Provide a clear, actionable answer that promotes sustainable recycling practices."""
+                    # invoke with "input" key (new LangChain API)
+                    response = st.session_state.qa_chain.invoke({"input": prompt})
+                    answer = response['answer']
                     
-                    # Query the RAG chain
-                    response = st.session_state.qa_chain.invoke({"query": enhanced_prompt})
-                    answer = response['result']
-                    
-                    # Display response
                     st.markdown(answer)
-                    
-                    # Add assistant response to chat history
                     st.session_state.messages.append({"role": "assistant", "content": answer})
                 
                 except Exception as e:
@@ -265,7 +258,6 @@ Provide a clear, actionable answer that promotes sustainable recycling practices
                     st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 else:
-    # Instructions when system is not initialized
     st.info("👈 Please configure your credentials and upload a policy document in the sidebar, then click 'Initialize RAG System' to start.")
     
     st.markdown("### 📋 Example Questions you can ask:")
