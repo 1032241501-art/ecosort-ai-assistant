@@ -8,7 +8,9 @@
 EcoSort AI is a Retrieval-Augmented Generation (RAG) powered web application designed to help citizens and businesses navigate complex municipal waste segregation policies. Built for the **1M1B & IBM SkillsBuild AI for Sustainability Internship**.
 
 ## 🎥 Project Demo
-*(Drag and drop your demo video here!)*
+
+https://github.com/user-attachments/assets/37c7f13a-be6e-4682-885a-151ed83ae4e2
+
 
 ## 🌍 The Problem & SDG Alignment
 This project aligns with **SDG 11 (Sustainable Cities)** and **SDG 12 (Responsible Consumption)**. 
