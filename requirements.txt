@@ -4,6 +4,7 @@ langchain==0.2.16
 langchain-ibm
 langchain-community==0.2.16
 langchain-core==0.2.38
-PyPDF2
+langchain-text-splitters
+pypdf
 faiss-cpu
 sentence-transformers
